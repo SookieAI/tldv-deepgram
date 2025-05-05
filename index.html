@@ -1,28 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <title>Transcript Export</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    body { margin: 0; background: #f9fafb; font-family: 'Inter', sans-serif; color: #1f2937; }
-    .container { max-width: 960px; margin: 40px auto; padding: 32px; background: #fff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-    h1 { font-size: 28px; font-weight: 600; text-align: center; margin-bottom: 32px; color: #111827; }
-    label { display: block; margin: 20px 0 8px; font-weight: 600; }
-    input, select, textarea, button { width: 100%; padding: 12px; font-size: 14px; border: 1px solid #d1d5db; border-radius: 6px; background: #fefefe; }
-    textarea { resize: vertical; min-height: 180px; font-family: monospace; }
-    .row { display: flex; flex-wrap: wrap; gap: 24px; }
-    .col { flex: 1; min-width: 280px; }
-    .actions { text-align: right; margin-top: 24px; }
-    button { background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
-    button:hover { background: #2563eb; }
-    #log { margin-top: 30px; padding: 16px; background: #f3f4f6; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+    body {
+      margin: 0;
+      background: #f9fafb;
+      font-family: 'Inter', sans-serif;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 40px auto;
+      padding: 32px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 32px;
+      color: #111827;
+    }
+
+    label {
+      display: block;
+      margin: 20px 0 8px;
+      font-weight: 600;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 14px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fefefe;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 180px;
+      font-family: monospace;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .col {
+      flex: 1;
+      min-width: 280px;
+    }
+
+    .actions {
+      text-align: right;
+      margin-top: 24px;
+    }
+
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #2563eb;
+    }
+
+    #log {
+      margin-top: 30px;
+      padding: 16px;
+      background: #f3f4f6;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      max-height: 300px;
+      overflow-y: auto;
+    }
   </style>
 </head>
+
 <body>
   <div class="container">
-    <h1>📝 Transcript Export Tool v - 3.2 (popup version)</h1>
+    <h1>📝 Transcript Export Tool v - 3.2.1 (popup version)</h1>
     <label for="inp-meta">Meeting Info</label>
     <textarea id="inp-meta" placeholder="📌 Title\n📅 Date\n👥 Participants\n\n--- TLDV Transcript ---\n..."></textarea>
     <div class="row">
@@ -84,52 +162,62 @@
         log('🚀 Launching popup to handle conversion...');
 
         const popup = window.open('about:blank', 'ffmpegWindow');
-        const popupScript = `
-          const log = msg => window.opener.postMessage({ type: 'log', msg }, '*');
-          const sendResult = data => window.opener.postMessage({ type: 'transcript', data }, '*');
+        const code = `
+    const log = msg => window.opener.postMessage({ type: 'log', msg }, '*');
+    const sendResult = data => window.opener.postMessage({ type: 'transcript', data }, '*');
 
-          (async () => {
-            try {
-              const list = await fetch(${JSON.stringify(payload.m3u8)}).then(r => r.text());
-              const base = ${JSON.stringify(payload.m3u8)}.slice(0, ${JSON.stringify(payload.m3u8)}.lastIndexOf('/') + 1);
-              const segs = list.split('\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
-              const buf = [];
-              for (const s of segs) {
-                log('Fetching ' + s);
-                buf.push(await (await fetch(base + s)).arrayBuffer());
-              }
-              const tsBlob = new Blob(buf, { type: 'video/mp2t' });
-              log('Sending to Deepgram...');
-              const res = await fetch('https://api.deepgram.com/v1/listen?model=' + encodeURIComponent(${JSON.stringify(m)}) + '&punctuate=true&paragraphs=true', {
-                method: 'POST',
-                headers: {
-                  Authorization: 'Token ' + ${JSON.stringify(k)},
-                  'Content-Type': 'video/mp2t'
-                },
-                body: tsBlob
-              });
-              const j = await res.json();
-              const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\n\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-              if (dg) sendResult(dg);
-              else sendResult('[No transcript received]');
-            } catch (e) {
-              sendResult('Error: ' + e.message);
-            }
-          })();
-        `;
-        popup.document.write(`<pre>Working...</pre><script>${popupScript.replace(/<\//g, '<\/')}</script>`);
+    (async () => {
+      try {
+        const list = await fetch(${JSON.stringify(payload.m3u8)}).then(r => r.text());
+        const base = ${JSON.stringify(payload.m3u8)}.slice(0, ${JSON.stringify(payload.m3u8)}.lastIndexOf('/') + 1);
+        const segs = list.split('\\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
+        const buf = [];
+        for (const s of segs) {
+          log('Fetching ' + s);
+          buf.push(await (await fetch(base + s)).arrayBuffer());
+        }
+        const tsBlob = new Blob(buf, { type: 'video/mp2t' });
+        log('Sending to Deepgram...');
+        const res = await fetch('https://api.deepgram.com/v1/listen?model=' + encodeURIComponent(${JSON.stringify(m)}) + '&punctuate=true&paragraphs=true', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Token ' + ${JSON.stringify(k)},
+            'Content-Type': 'video/mp2t'
+          },
+          body: tsBlob
+        });
+        const j = await res.json();
+        const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\\n\\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+        sendResult(dg || '[No transcript received]');
+      } catch (e) {
+        sendResult('Error: ' + e.message);
+      }
+    })();
+  `;
+
+        const encoded = btoa(unescape(encodeURIComponent(code)));
+        popup.document.write(`
+    <html><body><pre>Working...</pre>
+    <script>
+      const src = decodeURIComponent(escape(atob("${encoded}")));
+      new Function(src)();
+    <\/script>
+    </body></html>
+  `);
 
         window.addEventListener('message', e => {
           if (e.data?.type === 'log') log('[popup] ' + e.data.msg);
           if (e.data?.type === 'transcript') {
-            metaEl.value += '\n\n--- Deepgram Transcript ---\n' + e.data.data;
+            metaEl.value += '\\n\\n--- Deepgram Transcript ---\\n' + e.data.data;
             localStorage.setItem('deepgram_key', k);
             log('✅ Transcript added from popup.');
             popup.close();
           }
         }, { once: true });
       };
+
     });
   </script>
 </body>
+
 </html>
