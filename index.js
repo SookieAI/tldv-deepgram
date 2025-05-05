@@ -6,7 +6,9 @@ const path = require('path');
 const { exec } = require('child_process');
 const { tmpdir } = require('os');
 const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');
 const app = express();
+app.use(cors());
 
 app.use(express.json({ limit: '10mb' }));
 
