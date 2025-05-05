@@ -22,7 +22,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>📝 Transcript Export Tool v - 3.1.4</h1>
+    <h1>📝 Transcript Export Tool - 3.1.4</h1>
     <label for="inp-meta">Meeting Info</label>
     <textarea id="inp-meta" placeholder="📌 Title\n📅 Date\n👥 Participants\n\n--- TLDV Transcript ---\n..."></textarea>
     <div class="row">
@@ -43,23 +43,22 @@
     </div>
     <div id="log">Ready.</div>
   </div>
-
   <script>
     const payload = JSON.parse(window.name || '{}');
     console.log('[Payload received via window.name]', payload);
-
+  
     const log = msg => {
       const logEl = document.getElementById('log');
       logEl.textContent += msg + '\n';
       logEl.scrollTop = logEl.scrollHeight;
     };
-
+  
     document.addEventListener("DOMContentLoaded", () => {
       const metaEl = document.getElementById('inp-meta');
       const keyInp = document.getElementById('inp-key');
       const modelSel = document.getElementById('sel-model');
       const btn = document.getElementById('btn-start');
-
+  
       const meta = [
         `📌 ${payload.title || ''}`,
         `📅 ${payload.date || ''}`,
@@ -69,19 +68,22 @@
         ...(payload.transcript || [])
       ].join('\n');
       metaEl.value = meta;
-
-      if (payload.storedKey) keyInp.value = payload.storedKey;
-
+  
+      if (payload.storedKey) {
+        keyInp.value = payload.storedKey;
+        btn.disabled = false;
+      }
+  
       keyInp.addEventListener('input', () => {
         btn.disabled = !keyInp.value.trim();
       });
-
-      document.getElementById('btn-start').onclick = async () => {
+  
+      btn.onclick = async () => {
         const k = keyInp.value.trim(), m = modelSel.value;
         if (!k) return log('Missing API key');
-
+  
         try {
-          log('Fetching Deepgram usage...');
+          log('🔍 Checking Deepgram account...');
           const usageRes = await fetch('https://api.deepgram.com/v1/me', {
             headers: { Authorization: 'Token ' + k }
           });
@@ -90,29 +92,36 @@
         } catch (e) {
           log('⚠️ Could not fetch usage info');
         }
-
+  
         try {
-          log('Fetching audio segments...');
+          log('🎧 Fetching audio segments...');
           const list = await fetch(payload.m3u8).then(r => r.text());
           const base = payload.m3u8.slice(0, payload.m3u8.lastIndexOf('/') + 1);
           const segs = list.split('\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
           const buf = [];
           for (const s of segs) {
-            log('Fetching: ' + s);
+            log('→ Fetching: ' + s);
             buf.push(await (await fetch(base + s)).arrayBuffer());
           }
-
+  
           const tsBlob = new Blob(buf, { type: 'video/mp2t' });
-          const audio = await convertToWav(tsBlob);
-
-          log('Sending to Deepgram...');
+          let audio;
+          try {
+            log('🔄 Converting TS to WAV...');
+            audio = await convertToWav(tsBlob);
+          } catch (err) {
+            log('❌ Audio conversion failed: ' + err.message);
+            return;
+          }
+  
+          log('📤 Sending to Deepgram...');
           const res = await fetch(`https://api.deepgram.com/v1/listen?model=${encodeURIComponent(m)}&punctuate=true&paragraphs=true`, {
             method: 'POST',
             headers: { Authorization: 'Token ' + k, 'Content-Type': 'audio/wav' },
             body: audio
           });
           const j = await res.json();
-
+  
           const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\n\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
           if (dg) {
             metaEl.value += '\n\n--- Deepgram Transcript ---\n' + dg;
@@ -126,30 +135,32 @@
         }
       };
     });
-
+  
     async function convertToWav(blob) {
       const ctx = new OfflineAudioContext(1, 48000 * 60, 48000);
       const buf = await blob.arrayBuffer();
-      const audio = await ctx.decodeAudioData(buf);
+      let audio;
+      try {
+        audio = await ctx.decodeAudioData(buf);
+      } catch (err) {
+        throw new Error("decodeAudioData failed: likely unsupported format (.ts)");
+      }
       const wav = audioBufferToWav(audio);
       return new Blob([wav], { type: 'audio/wav' });
     }
-
+  
     function audioBufferToWav(buffer) {
       const numOfChan = buffer.numberOfChannels;
       const length = buffer.length * numOfChan * 2 + 44;
       const bufferOut = new ArrayBuffer(length);
       const view = new DataView(bufferOut);
-
       let offset = 0;
-
-      const writeString = function(str) {
-        for (let i = 0; i < str.length; i++) {
-          view.setUint8(offset + i, str.charCodeAt(i));
-        }
+  
+      const writeString = str => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
         offset += str.length;
       };
-
+  
       writeString('RIFF');
       view.setUint32(offset, 36 + buffer.length * 2, true); offset += 4;
       writeString('WAVE');
@@ -163,15 +174,16 @@
       view.setUint16(offset, 16, true); offset += 2;
       writeString('data');
       view.setUint32(offset, buffer.length * 2, true); offset += 4;
-
+  
       const channel = buffer.getChannelData(0);
       for (let i = 0; i < channel.length; i++, offset += 2) {
         let s = Math.max(-1, Math.min(1, channel[i]));
         view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
       }
-
+  
       return bufferOut;
     }
   </script>
+  
 </body>
 </html>
