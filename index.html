@@ -100,7 +100,7 @@
 
 <body>
   <div class="container">
-    <h1>📝 Transcript Export Tool v - 3.2.1 (popup version)</h1>
+    <h1>📝 Transcript Export Tool v - 3.3 (server API version)</h1>
     <label for="inp-meta">Meeting Info</label>
     <textarea id="inp-meta" placeholder="📌 Title\n📅 Date\n👥 Participants\n\n--- TLDV Transcript ---\n..."></textarea>
     <div class="row">
@@ -159,63 +159,41 @@
         const k = keyInp.value.trim(), m = modelSel.value;
         if (!k) return log('Missing API key');
 
-        log('🚀 Launching popup to handle conversion...');
-
-        const popup = window.open('about:blank', 'ffmpegWindow');
-        const code = `
-    const log = msg => window.opener.postMessage({ type: 'log', msg }, '*');
-    const sendResult = data => window.opener.postMessage({ type: 'transcript', data }, '*');
-
-    (async () => {
-      try {
-        const list = await fetch(${JSON.stringify(payload.m3u8)}).then(r => r.text());
-        const base = ${JSON.stringify(payload.m3u8)}.slice(0, ${JSON.stringify(payload.m3u8)}.lastIndexOf('/') + 1);
-        const segs = list.split('\\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
-        const buf = [];
-        for (const s of segs) {
-          log('Fetching ' + s);
-          buf.push(await (await fetch(base + s)).arrayBuffer());
+        log('⏳ Warming up server...');
+        try {
+          await fetch('https://tldv-deepgram.onrender.com/', { method: 'HEAD' });
+          log('🔥 Server ready. Transcribing...');
+        } catch (err) {
+          log('⚠️ Server not reachable. Try again shortly.');
+          return;
         }
-        const tsBlob = new Blob(buf, { type: 'video/mp2t' });
-        log('Sending to Deepgram...');
-        const res = await fetch('https://api.deepgram.com/v1/listen?model=' + encodeURIComponent(${JSON.stringify(m)}) + '&punctuate=true&paragraphs=true', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Token ' + ${JSON.stringify(k)},
-            'Content-Type': 'video/mp2t'
-          },
-          body: tsBlob
-        });
-        const j = await res.json();
-        const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\\n\\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-        sendResult(dg || '[No transcript received]');
-      } catch (e) {
-        sendResult('Error: ' + e.message);
-      }
-    })();
-  `;
 
-        const encoded = btoa(unescape(encodeURIComponent(code)));
-        popup.document.write(`
-    <html><body><pre>Working...</pre>
-    <script>
-      const src = decodeURIComponent(escape(atob("${encoded}")));
-      new Function(src)();
-    <\/script>
-    </body></html>
-  `);
+        try {
+          const response = await fetch('https://tldv-deepgram.onrender.com/transcribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              m3u8Url: payload.m3u8,
+              deepgramKey: k,
+              model: m
+            })
+          });
 
-        window.addEventListener('message', e => {
-          if (e.data?.type === 'log') log('[popup] ' + e.data.msg);
-          if (e.data?.type === 'transcript') {
-            metaEl.value += '\\n\\n--- Deepgram Transcript ---\\n' + e.data.data;
+          const result = await response.json();
+          const dgText = result.transcript?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+          if (dgText) {
+            metaEl.value += '\n\n--- Deepgram Transcript ---\n' + dgText;
             localStorage.setItem('deepgram_key', k);
-            log('✅ Transcript added from popup.');
-            popup.close();
+            log('✅ Deepgram transcript added.');
+          } else {
+            log('⚠️ No transcript received.');
           }
-        }, { once: true });
+        } catch (e) {
+          log('❌ Error during transcription: ' + e.message);
+        }
       };
-
     });
   </script>
 </body>
