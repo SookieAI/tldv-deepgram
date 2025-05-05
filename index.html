@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Transcript Export</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #f9fafb; font-family: 'Inter', sans-serif; color: #1f2937; }
+    .container { max-width: 960px; margin: 40px auto; padding: 32px; background: #fff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+    h1 { font-size: 28px; font-weight: 600; text-align: center; margin-bottom: 32px; color: #111827; }
+    label { display: block; margin: 20px 0 8px; font-weight: 600; }
+    input, select, textarea, button { width: 100%; padding: 12px; font-size: 14px; border: 1px solid #d1d5db; border-radius: 6px; background: #fefefe; }
+    textarea { resize: vertical; min-height: 180px; font-family: monospace; }
+    .row { display: flex; flex-wrap: wrap; gap: 24px; }
+    .col { flex: 1; min-width: 280px; }
+    .actions { text-align: right; margin-top: 24px; }
+    button { background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #2563eb; }
+    #log { margin-top: 30px; padding: 16px; background: #f3f4f6; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📝 Transcript Export Tool</h1>
+    <label for="inp-meta">Meeting Info</label>
+    <textarea id="inp-meta" placeholder="📌 Title\n📅 Date\n👥 Participants\n\n--- TLDV Transcript ---\n..."></textarea>
+    <label><input type="checkbox" id="chk-dg"> Enable Deepgram Transcription</label>
+    <div class="row">
+      <div class="col">
+        <label>Deepgram API Key</label>
+        <input id="inp-key" type="password" placeholder="Deepgram API key" />
+      </div>
+      <div class="col">
+        <label>Model</label>
+        <select id="sel-model"><option value="">-- select model --</option></select>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-start">Transcribe & Export</button>
+    </div>
+    <div id="log">Ready.</div>
+  </div>
+
+  <script>
+    const log = msg => {
+      const logEl = document.getElementById('log');
+      logEl.textContent += msg + '\\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const payload = JSON.parse(decodeURIComponent(location.search.slice(6) || '{}')); // ?data=ENCODED
+
+    window.onload = () => {
+      const meta = [
+        `📌 ${payload.title || ''}`,
+        `📅 ${payload.date || ''}`,
+        `👥 ${payload.participants?.join(', ') || ''}`,
+        '',
+        '--- TLDV Transcript ---',
+        ...(payload.transcript || [])
+      ].join('\\n');
+      document.getElementById('inp-meta').value = meta;
+
+      const keyInp = document.getElementById('inp-key');
+      const modelSel = document.getElementById('sel-model');
+      const chk = document.getElementById('chk-dg');
+
+      if (payload.storedKey) keyInp.value = payload.storedKey;
+
+      chk.addEventListener('change', () => {
+        keyInp.disabled = modelSel.disabled = !chk.checked;
+        if (chk.checked) setTimeout(loadModels, 100);
+      });
+
+      async function loadModels() {
+        const k = keyInp.value.trim();
+        if (!k) return alert('Enter key');
+        log('Loading Deepgram models...');
+        try {
+          const res = await fetch('https://api.deepgram.com/v1/models', {
+            headers: { Authorization: 'Token ' + k }
+          });
+          const j = await res.json();
+          modelSel.innerHTML = '<option value="">-- select model --</option>';
+          j.models.forEach(m => modelSel.add(new Option(m.name, m.name)));
+          log('Models loaded: ' + j.models.length);
+        } catch (err) {
+          log('Failed to load models: ' + err);
+        }
+      }
+
+      document.getElementById('btn-start').onclick = async () => {
+        let text = document.getElementById('inp-meta').value;
+        if (chk.checked) {
+          const k = keyInp.value.trim(), m = modelSel.value;
+          if (k && m) {
+            log('Fetching audio segments...');
+            const list = await fetch(payload.m3u8).then(r => r.text());
+            const base = payload.m3u8.slice(0, payload.m3u8.lastIndexOf('/') + 1);
+            const segs = list.split('\\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
+            const buf = [];
+            for (const s of segs) {
+              log('Fetching: ' + s);
+              buf.push(await (await fetch(base + s)).arrayBuffer());
+            }
+            const blob = new Blob(buf, { type: 'audio/ts' });
+            log('Sending to Deepgram...');
+            const res = await fetch(`https://api.deepgram.com/v1/listen?model=${encodeURIComponent(m)}&punctuate=true&paragraphs=true`, {
+              method: 'POST',
+              headers: { Authorization: 'Token ' + k },
+              body: blob
+            });
+            const j = await res.json();
+            const dg = j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+            if (dg) {
+              text += '\\n\\n--- Deepgram Transcript ---\\n' + dg;
+              localStorage.setItem('deepgram_key', k);
+              log('Deepgram transcript received.');
+            } else {
+              log('Deepgram returned no transcript.');
+            }
+          } else {
+            log('Missing API key or model');
+          }
+        }
+
+        const file = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file);
+        a.download = (payload.title || 'transcript') + '.txt';
+        a.click();
+        log('File saved.');
+      };
+    };
+  </script>
+</body>
+</html>
