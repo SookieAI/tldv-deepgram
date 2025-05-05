@@ -43,15 +43,16 @@
   </div>
 
   <script>
+    const payload = JSON.parse(window.name || '{}');
+    console.log('[Payload received via window.name]', payload);
+
     const log = msg => {
       const logEl = document.getElementById('log');
-      logEl.textContent += msg + '\\n';
+      logEl.textContent += msg + '\n';
       logEl.scrollTop = logEl.scrollHeight;
     };
 
-    const payload = JSON.parse(window.name || '{}');
-
-    window.onload = () => {
+    document.addEventListener("DOMContentLoaded", () => {
       const meta = [
         `📌 ${payload.title || ''}`,
         `📅 ${payload.date || ''}`,
@@ -59,7 +60,7 @@
         '',
         '--- TLDV Transcript ---',
         ...(payload.transcript || [])
-      ].join('\\n');
+      ].join('\n');
       document.getElementById('inp-meta').value = meta;
 
       const keyInp = document.getElementById('inp-key');
@@ -98,7 +99,7 @@
             log('Fetching audio segments...');
             const list = await fetch(payload.m3u8).then(r => r.text());
             const base = payload.m3u8.slice(0, payload.m3u8.lastIndexOf('/') + 1);
-            const segs = list.split('\\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
+            const segs = list.split('\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
             const buf = [];
             for (const s of segs) {
               log('Fetching: ' + s);
@@ -114,7 +115,7 @@
             const j = await res.json();
             const dg = j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
             if (dg) {
-              text += '\\n\\n--- Deepgram Transcript ---\\n' + dg;
+              text += '\n\n--- Deepgram Transcript ---\n' + dg;
               localStorage.setItem('deepgram_key', k);
               log('Deepgram transcript received.');
             } else {
@@ -132,7 +133,7 @@
         a.click();
         log('File saved.');
       };
-    };
+    });
   </script>
 </body>
 </html>
