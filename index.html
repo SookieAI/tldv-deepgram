@@ -22,7 +22,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>📝 Transcript Export Tool v - 3.1.2</h1>
+    <h1>📝 Transcript Export Tool v - 3.1.3</h1>
     <label for="inp-meta">Meeting Info</label>
     <textarea id="inp-meta" placeholder="📌 Title\n📅 Date\n👥 Participants\n\n--- TLDV Transcript ---\n..."></textarea>
     <label><input type="checkbox" id="chk-dg"> Enable Deepgram Transcription</label>
@@ -40,7 +40,7 @@
       </div>
     </div>
     <div class="actions">
-      <button id="btn-start">Transcribe & Export</button>
+      <button id="btn-start">Transcribe with Deepgram</button>
     </div>
     <div id="log">Ready.</div>
   </div>
@@ -64,7 +64,8 @@
         '--- TLDV Transcript ---',
         ...(payload.transcript || [])
       ].join('\n');
-      document.getElementById('inp-meta').value = meta;
+      const metaEl = document.getElementById('inp-meta');
+      metaEl.value = meta;
 
       const keyInp = document.getElementById('inp-key');
       const modelSel = document.getElementById('sel-model');
@@ -77,46 +78,38 @@
       });
 
       document.getElementById('btn-start').onclick = async () => {
-        let text = document.getElementById('inp-meta').value;
-        if (chk.checked) {
-          const k = keyInp.value.trim(), m = modelSel.value;
-          if (k && m) {
-            log('Fetching audio segments...');
-            const list = await fetch(payload.m3u8).then(r => r.text());
-            const base = payload.m3u8.slice(0, payload.m3u8.lastIndexOf('/') + 1);
-            const segs = list.split('\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
-            const buf = [];
-            for (const s of segs) {
-              log('Fetching: ' + s);
-              buf.push(await (await fetch(base + s)).arrayBuffer());
-            }
-            const blob = new Blob(buf, { type: 'audio/mpeg' });
-            log('Sending to Deepgram...');
-            const res = await fetch(`https://api.deepgram.com/v1/listen?model=${encodeURIComponent(m)}&punctuate=true&paragraphs=true`, {
-              method: 'POST',
-              headers: { Authorization: 'Token ' + k },
-              body: blob
-            });
-            const j = await res.json();
-            const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\n\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-            if (dg) {
-              text += '\n\n--- Deepgram Transcript ---\n' + dg;
-              localStorage.setItem('deepgram_key', k);
-              log('Deepgram transcript received.');
-            } else {
-              log('Deepgram returned no transcript.');
-            }
-          } else {
-            log('Missing API key or model');
-          }
-        }
+        if (!chk.checked) return;
 
-        const file = new Blob([text], { type: 'text/plain' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(file);
-        a.download = (payload.title || 'transcript') + '.txt';
-        a.click();
-        log('File saved.');
+        const k = keyInp.value.trim(), m = modelSel.value;
+        if (k && m) {
+          log('Fetching audio segments...');
+          const list = await fetch(payload.m3u8).then(r => r.text());
+          const base = payload.m3u8.slice(0, payload.m3u8.lastIndexOf('/') + 1);
+          const segs = list.split('\n').filter(l => l && !l.startsWith('#') && l.endsWith('.ts'));
+          const buf = [];
+          for (const s of segs) {
+            log('Fetching: ' + s);
+            buf.push(await (await fetch(base + s)).arrayBuffer());
+          }
+          const blob = new Blob(buf, { type: 'audio/mpeg' });
+          log('Sending to Deepgram...');
+          const res = await fetch(`https://api.deepgram.com/v1/listen?model=${encodeURIComponent(m)}&punctuate=true&paragraphs=true`, {
+            method: 'POST',
+            headers: { Authorization: 'Token ' + k },
+            body: blob
+          });
+          const j = await res.json();
+          const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\n\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+          if (dg) {
+            metaEl.value += '\n\n--- Deepgram Transcript ---\n' + dg;
+            localStorage.setItem('deepgram_key', k);
+            log('Deepgram transcript appended.');
+          } else {
+            log('Deepgram returned no transcript.');
+          }
+        } else {
+          log('Missing API key or model');
+        }
       };
     });
   </script>
