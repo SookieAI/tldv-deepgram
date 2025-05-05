@@ -22,7 +22,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>📝 Transcript Export Tool v - 3.1.1</h1>
+    <h1>📝 Transcript Export Tool v - 3.1.2</h1>
     <label for="inp-meta">Meeting Info</label>
     <textarea id="inp-meta" placeholder="📌 Title\n📅 Date\n👥 Participants\n\n--- TLDV Transcript ---\n..."></textarea>
     <label><input type="checkbox" id="chk-dg"> Enable Deepgram Transcription</label>
@@ -33,7 +33,10 @@
       </div>
       <div class="col">
         <label>Model</label>
-        <select id="sel-model"><option value="">-- select model --</option></select>
+        <select id="sel-model">
+          <option value="nova-3">nova-3</option>
+          <option value="nova-2">nova-2</option>
+        </select>
       </div>
     </div>
     <div class="actions">
@@ -71,25 +74,7 @@
 
       chk.addEventListener('change', () => {
         keyInp.disabled = modelSel.disabled = !chk.checked;
-        if (chk.checked) setTimeout(loadModels, 100);
       });
-
-      async function loadModels() {
-        const k = keyInp.value.trim();
-        if (!k) return alert('Enter key');
-        log('Loading Deepgram models...');
-        try {
-          const res = await fetch('https://api.deepgram.com/v1/models', {
-            headers: { Authorization: 'Token ' + k }
-          });
-          const j = await res.json();
-          modelSel.innerHTML = '<option value="">-- select model --</option>';
-          j.models.forEach(m => modelSel.add(new Option(m.name, m.name)));
-          log('Models loaded: ' + j.models.length);
-        } catch (err) {
-          log('Failed to load models: ' + err);
-        }
-      }
 
       document.getElementById('btn-start').onclick = async () => {
         let text = document.getElementById('inp-meta').value;
@@ -105,7 +90,7 @@
               log('Fetching: ' + s);
               buf.push(await (await fetch(base + s)).arrayBuffer());
             }
-            const blob = new Blob(buf, { type: 'audio/ts' });
+            const blob = new Blob(buf, { type: 'audio/mpeg' });
             log('Sending to Deepgram...');
             const res = await fetch(`https://api.deepgram.com/v1/listen?model=${encodeURIComponent(m)}&punctuate=true&paragraphs=true`, {
               method: 'POST',
@@ -113,7 +98,7 @@
               body: blob
             });
             const j = await res.json();
-            const dg = j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+            const dg = j.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.map(p => p.sentences.map(s => s.text).join(' ')).join('\n\n') || j.results?.channels?.[0]?.alternatives?.[0]?.transcript;
             if (dg) {
               text += '\n\n--- Deepgram Transcript ---\n' + dg;
               localStorage.setItem('deepgram_key', k);
