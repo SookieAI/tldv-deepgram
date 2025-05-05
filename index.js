@@ -34,7 +34,7 @@ app.post('/transcribe', async (req, res) => {
       const filePath = path.join(tmp, `seg${i}.ts`);
       const buffer = await fetch(base + seg).then(r => r.arrayBuffer());
       fs.writeFileSync(filePath, Buffer.from(buffer));
-      segmentFiles.push(`file 'seg${i}.ts'`);
+      segmentFiles.push(`file '${filePath.replace(/'/g, "'\\''")}'`); // full path for FFmpeg concat
     }
 
     const listPath = path.join(tmp, 'list.txt');
@@ -43,7 +43,7 @@ app.post('/transcribe', async (req, res) => {
     const output = path.join(tmp, 'output.wav');
     console.log('[INFO] Starting FFmpeg conversion...');
     await new Promise((resolve, reject) => {
-      exec(`ffmpeg -y -f concat -safe 0 -i list.txt -vn -acodec pcm_s16le -ar 16000 -ac 1 output.wav`,
+      exec(`ffmpeg -y -f concat -safe 0 -i ${listPath} -vn -acodec pcm_s16le -ar 16000 -ac 1 ${output}`,
         { cwd: tmp },
         (err, stdout, stderr) => {
           if (err) {
